@@ -4,6 +4,10 @@
 
 **Author:** Dr. Mohamed Fakhry (Clinical AI Engineer & MD)
 
+Click the image to watch the demo:
+
+[![Watch the Demo](https://img.youtube.com/vi/LrsGSmyUY4w/maxresdefault.jpg)](https://youtu.be/LrsGSmyUY4w)
+
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Framework](https://img.shields.io/badge/Framework-SpeechBrain-red)
 ![Domain](https://img.shields.io/badge/Domain-Clinical%20AI-green)
