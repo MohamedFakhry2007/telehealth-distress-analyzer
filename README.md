@@ -1,6 +1,9 @@
 # 🩺 Telehealth Distress Analyzer (Clinical AI POC)
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://telehealth-distress-analyzer-9rv6xsyezw4apdi8nwe4zs.streamlit.app)
+
 ### AI-Powered Acoustic Triage for Telemedicine
+**Try the Live Demo:** [Click Here to Open App](https://telehealth-distress-analyzer-9rv6xsyezw4apdi8nwe4zs.streamlit.app)
 
 **Author:** Dr. Mohamed Fakhry (Clinical AI Engineer & MD)
 
