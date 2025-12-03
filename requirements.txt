@@ -1,7 +1,8 @@
-speechbrain>=1.0.0
+--extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.0.0
 torchaudio>=2.0.0
 numpy>=1.24
+speechbrain>=1.0.0
 huggingface-hub>=0.10.1
 moviepy<2.0.0
 imageio-ffmpeg>=0.4.8

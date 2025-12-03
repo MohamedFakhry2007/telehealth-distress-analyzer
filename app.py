@@ -5,9 +5,10 @@ import streamlit as st
 import torch
 import torchaudio
 import soundfile as sf
+import uuid
 
 # --- WINDOWS FIX 1: DISABLE SYMLINKS ---
-os.environ["HF_HUB_DISABLE_SYMLINKS"] = "1"
+# os.environ["HF_HUB_DISABLE_SYMLINKS"] = "1"
 
 # --- CONFIGURATION ---
 BASE_DIR = os.getcwd()
@@ -98,9 +99,9 @@ def setup_workspace():
     os.makedirs(WORKSPACE_DIR, exist_ok=True)
     return WORKSPACE_DIR
 
-def download_video_with_yt_dlp(url, directory):
+def download_video_with_yt_dlp(url, directory, filename="input_video.mp4"):
     try:
-        filepath = os.path.join(directory, "input_video.mp4")
+        filepath = os.path.join(directory, filename)
         command = [
             "yt-dlp", "-f", "bestaudio/best", "--remux-video", "mp4", 
             "--force-overwrites", "-o", filepath, url
@@ -177,10 +178,19 @@ def main():
     if submit and video_url:
         with st.spinner("Processing..."):
             ws_dir = setup_workspace()
-            video_path = download_video_with_yt_dlp(video_url, ws_dir)
+            
+            # Generate a unique session ID
+            session_id = str(uuid.uuid4())[:8]
+            
+            # Use unique filenames
+            video_filename = f"video_{session_id}.mp4"
+            audio_filename = f"audio_{session_id}.wav"
+            
+            # Download video with unique filename
+            video_path = download_video_with_yt_dlp(video_url, ws_dir, filename=video_filename)
             
             if video_path:
-                audio_path = os.path.join(ws_dir, "patient_audio.wav")
+                audio_path = os.path.join(ws_dir, audio_filename)
                 if extract_audio(video_path, audio_path, ANALYSIS_DURATION_SECONDS):
                     try:
                         state, conf = analyze_patient_audio(audio_path, classifier)
