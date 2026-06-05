@@ -33,7 +33,7 @@ This project demonstrates acoustic ML engineering (not LLM/RAG): audio preproces
 
 The system operates on a robust pipeline designed for Windows compatibility and ease of deployment:
 
-1. **Ingestion:** Fetches telehealth session recordings via `yt-dlp`.
+1. **Ingestion:** User uploads a telehealth recording (video or audio file).
 2. **Preprocessing:** Extracts 16 kHz mono audio waveforms using `ffmpeg` (with path handling for Windows).
 3. **Inference:** Utilizes **SpeechBrain's Wav2Vec2-IEMOCAP** model to map acoustic features to clinical states.
 4. **Guardrails:** [**VLM-Guard**](https://github.com/MohamedFakhry2007/vlm-guard) composable rule engine validates the prediction (confidence thresholds, known model biases, triage consistency) before it reaches the clinician.
@@ -49,20 +49,15 @@ The system operates on a robust pipeline designed for Windows compatibility and 
 ### Setup
 
 ```bash
-# Clone the repository
 git clone https://github.com/MohamedFakhry2007/Telehealth-Distress-Analyzer.git
 cd Telehealth-Distress-Analyzer
-
-# Create virtual environment
 python -m venv .venv
 
-# Activate virtual environment
 # macOS / Linux
 source .venv/bin/activate
 # Windows (PowerShell)
 .venv\Scripts\Activate.ps1
 
-# Install dependencies
 pip install -r requirements.txt
 ```
 
@@ -121,8 +116,8 @@ pytest tests/ -v
 
 ## 🛠️ Engineering Challenges & Fixes
 
-- Dependency conflicts between `torchaudio` and `speechbrain` were resolved with targeted compatibility fixes.
 - Path sanitization logic was added to handle Windows-specific absolute/relative path mixing in audio libraries.
+- Dependency conflicts between `torchaudio` and `speechbrain` were resolved with targeted compatibility fixes.
 
 ## 🔮 Future Roadmap
 

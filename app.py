@@ -1,6 +1,7 @@
 import os
 import shutil
 import subprocess
+import tempfile
 import streamlit as st
 import torch
 import torchaudio
@@ -64,7 +65,6 @@ def surgical_load_audio(filepath, **kwargs):
 # Apply Patch
 torchaudio.load = surgical_load_audio
 
-from moviepy.editor import VideoFileClip
 from speechbrain.inference.interfaces import foreign_class
 from telehealth_guardrails import make_guardrail_engine, guardrail_orchestrator, CLINICAL_MAP
 
@@ -98,18 +98,7 @@ def setup_workspace():
     os.makedirs(WORKSPACE_DIR, exist_ok=True)
     return WORKSPACE_DIR
 
-def download_video_with_yt_dlp(url, directory, filename="input_video.mp4"):
-    try:
-        filepath = os.path.join(directory, filename)
-        command = [
-            "yt-dlp", "-f", "bestaudio/best", "--remux-video", "mp4", 
-            "--force-overwrites", "-o", filepath, url
-        ]
-        subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8', timeout=120)
-        return filepath if os.path.exists(filepath) else None
-    except Exception as e:
-        st.error(f"Download Error: {e}")
-        return None
+ACCEPTED_FORMATS = ["mp4", "webm", "mov", "avi", "mkv", "wav", "mp3", "m4a", "flac", "ogg", "aac", "wma"]
 
 def extract_audio(video_path, audio_path, max_duration_sec):
     try:
@@ -171,90 +160,99 @@ def main():
             st.error(f"Init Failed: {e}")
             return
 
-    with st.form("main_form"):
-        video_url = st.text_input("Telehealth URL", placeholder="https://...")
-        submit = st.form_submit_button("Analyze Vitals")
+    uploaded_file = st.file_uploader(
+        "Upload Telehealth Recording",
+        type=ACCEPTED_FORMATS,
+        help="Upload a video (mp4, webm, mov) or audio (wav, mp3, m4a) file. Audio is processed as 16kHz mono."
+    )
 
-    if submit and video_url:
+    if uploaded_file:
         with st.spinner("Processing..."):
             ws_dir = setup_workspace()
-            
-            # Generate a unique session ID
             session_id = str(uuid.uuid4())[:8]
-            
-            # Use unique filenames
-            video_filename = f"video_{session_id}.mp4"
             audio_filename = f"audio_{session_id}.wav"
-            
-            # Download video with unique filename
-            video_path = download_video_with_yt_dlp(video_url, ws_dir, filename=video_filename)
-            
-            if video_path:
-                audio_path = os.path.join(ws_dir, audio_filename)
-                if extract_audio(video_path, audio_path, ANALYSIS_DURATION_SECONDS):
-                    try:
-                        state, conf = analyze_patient_audio(audio_path, classifier)
-                        result = CLINICAL_MAP.get(state, {"label": "Unknown", "color": "gray", "priority": "Assess"})
 
-                        analysis, audit = guardrail_orchestrator(
-                            guardrail_engine, state, conf, session_id
-                        )
-                        status = analysis.validation_status
+            ext = uploaded_file.name.rsplit(".", 1)[-1].lower()
+            input_path = os.path.join(ws_dir, f"input_{session_id}.{ext}")
+            audio_path = os.path.join(ws_dir, audio_filename)
 
-                        st.divider()
-                        st.subheader("🎯 Triage Assessment")
+            with open(input_path, "wb") as f:
+                f.write(uploaded_file.read())
 
-                        if status == "blocked":
-                            st.error(f"🛡️ **Prediction Blocked** — {analysis.validation_message}")
-                        else:
-                            cols = st.columns(3)
+            need_extraction = ext in ["mp4", "webm", "mov", "avi", "mkv"]
+            ready = False
 
-                            with cols[0]:
-                                st.markdown(f"""
-                                <div class="metric-container" style="border-bottom: 4px solid {result['color']};">
-                                    <div class="metric-label">Detected State</div>
-                                    <div class="metric-value">{result['label']}</div>
-                                </div>
-                                """, unsafe_allow_html=True)
+            if need_extraction:
+                if extract_audio(input_path, audio_path, ANALYSIS_DURATION_SECONDS):
+                    ready = True
+            else:
+                audio_path = input_path
+                ready = True
 
-                            with cols[1]:
-                                st.markdown(f"""
-                                <div class="metric-container">
-                                    <div class="metric-label">Confidence</div>
-                                    <div class="metric-value">{conf}%</div>
-                                </div>
-                                """, unsafe_allow_html=True)
+            if ready:
+                try:
+                    state, conf = analyze_patient_audio(audio_path, classifier)
+                    result = CLINICAL_MAP.get(state, {"label": "Unknown", "color": "gray", "priority": "Assess"})
 
-                            with cols[2]:
-                                st.markdown(f"""
-                                <div class="metric-container">
-                                    <div class="metric-label">Priority</div>
-                                    <div class="metric-value">{result['priority']}</div>
-                                </div>
-                                """, unsafe_allow_html=True)
+                    analysis, audit = guardrail_orchestrator(
+                        guardrail_engine, state, conf, session_id
+                    )
+                    status = analysis.validation_status
 
-                            if status == "flagged":
-                                st.warning(f"⚠️ **Safety Flag** — {analysis.validation_message}")
+                    st.divider()
+                    st.subheader("🎯 Triage Assessment")
 
-                            elif status == "passed":
-                                st.success("✅ **Guardrails Passed** — Prediction meets safety criteria.")
+                    if status == "blocked":
+                        st.error(f"🛡️ **Prediction Blocked** — {analysis.validation_message}")
+                    else:
+                        cols = st.columns(3)
 
+                        with cols[0]:
                             st.markdown(f"""
-                            <div class="medical-card">
-                                <b>Clinical Interpretation:</b> Patient acoustic biomarkers suggest a 
-                                <span style="color:{result['color']};font-weight:bold;">{result['label']}</span> state. 
-                                Recommended Triage Action: <b>{result['priority']}</b>.
+                            <div class="metric-container" style="border-bottom: 4px solid {result['color']};">
+                                <div class="metric-label">Detected State</div>
+                                <div class="metric-value">{result['label']}</div>
                             </div>
                             """, unsafe_allow_html=True)
 
-                        if audit.entries:
-                            with st.expander("📋 Safety Audit Trail"):
-                                for entry in audit.summary():
-                                    icon = {"block": "🚫", "flag": "⚠️", "correct": "🛠️", "pass": "✅"}.get(entry["action"], "ℹ️")
-                                    sev = {"error": "🔴", "warning": "🟡", "info": "🔵"}.get(entry["severity"], "⚪")
-                                    st.markdown(f"{sev} **{entry['rule']}** — {entry['action'].upper()} — {entry['message']}")
-                    except Exception as e:
-                        st.error(f"Analysis Error: {e}")
+                        with cols[1]:
+                            st.markdown(f"""
+                            <div class="metric-container">
+                                <div class="metric-label">Confidence</div>
+                                <div class="metric-value">{conf}%</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        with cols[2]:
+                            st.markdown(f"""
+                            <div class="metric-container">
+                                <div class="metric-label">Priority</div>
+                                <div class="metric-value">{result['priority']}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        if status == "flagged":
+                            st.warning(f"⚠️ **Safety Flag** — {analysis.validation_message}")
+
+                        elif status == "passed":
+                            st.success("✅ **Guardrails Passed** — Prediction meets safety criteria.")
+
+                        st.markdown(f"""
+                        <div class="medical-card">
+                            <b>Clinical Interpretation:</b> Patient acoustic biomarkers suggest a 
+                            <span style="color:{result['color']};font-weight:bold;">{result['label']}</span> state. 
+                            Recommended Triage Action: <b>{result['priority']}</b>.
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    if audit.entries:
+                        with st.expander("📋 Safety Audit Trail"):
+                            for entry in audit.summary():
+                                icon = {"block": "🚫", "flag": "⚠️", "correct": "🛠️", "pass": "✅"}.get(entry["action"], "ℹ️")
+                                sev = {"error": "🔴", "warning": "🟡", "info": "🔵"}.get(entry["severity"], "⚪")
+                                st.markdown(f"{sev} **{entry['rule']}** — {entry['action'].upper()} — {entry['message']}")
+                except Exception as e:
+                    st.error(f"Analysis Error: {e}")
 
 if __name__ == "__main__":
     main()
