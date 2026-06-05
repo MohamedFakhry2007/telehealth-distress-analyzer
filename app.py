@@ -131,6 +131,7 @@ def main():
         <style>
         .medical-card {
             background-color: #f0f2f6;
+            color: #1a1a1a;
             border-radius: 10px;
             padding: 20px;
             margin: 10px 0;
