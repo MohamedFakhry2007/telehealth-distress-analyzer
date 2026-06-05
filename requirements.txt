@@ -10,3 +10,4 @@ streamlit>=1.24.0
 yt-dlp>=2024.05.27
 transformers>=4.30.0
 soundfile>=0.12.1
+vlm-guard>=0.2.0

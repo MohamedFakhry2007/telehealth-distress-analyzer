@@ -66,19 +66,13 @@ torchaudio.load = surgical_load_audio
 
 from moviepy.editor import VideoFileClip
 from speechbrain.inference.interfaces import foreign_class
+from telehealth_guardrails import make_guardrail_engine, guardrail_orchestrator, CLINICAL_MAP
 
 # --- Clinical AI Configuration ---
 MODEL_ID = "speechbrain/emotion-recognition-wav2vec2-IEMOCAP"
 PAGE_TITLE = "Telehealth Distress Analyzer"
 PAGE_ICON = "🩺"
 ANALYSIS_DURATION_SECONDS = 30 
-
-CLINICAL_MAP = {
-    "ang": {"label": "High Distress (Agitation)", "color": "red", "priority": "Urgent"},
-    "sad": {"label": "Depressive Symptoms / Low Mood", "color": "orange", "priority": "Review Needed"},
-    "hap": {"label": "Stable / Positive Affect", "color": "green", "priority": "Routine"},
-    "neu": {"label": "Neutral / Baseline", "color": "blue", "priority": "Routine"}
-}
 
 # --- Core Functions ---
 
@@ -89,6 +83,11 @@ def load_model():
         pymodule_file="custom_interface.py", 
         classname="CustomEncoderWav2vec2Classifier"
     )
+
+
+@st.cache_resource
+def load_guardrails():
+    return make_guardrail_engine()
 
 def setup_workspace():
     if os.path.exists(WORKSPACE_DIR):
@@ -164,9 +163,10 @@ def main():
     st.markdown("**Clinical Decision Support System (CDSS)** | Emotion-based Triage")
     st.warning("⚠️ **Disclaimer:** POC for educational use. Not a medical device.")
 
-    with st.spinner("Initializing Models..."):
+    with st.spinner("Initializing Models & Guardrails..."):
         try:
             classifier = load_model()
+            guardrail_engine = load_guardrails()
         except Exception as e:
             st.error(f"Init Failed: {e}")
             return
@@ -195,49 +195,64 @@ def main():
                     try:
                         state, conf = analyze_patient_audio(audio_path, classifier)
                         result = CLINICAL_MAP.get(state, {"label": "Unknown", "color": "gray", "priority": "Assess"})
-                        
+
+                        analysis, audit = guardrail_orchestrator(
+                            guardrail_engine, state, conf, session_id
+                        )
+                        status = analysis.validation_status
+
                         st.divider()
                         st.subheader("🎯 Triage Assessment")
-                        
-                        # New Layout using Custom HTML for full visibility
-                        cols = st.columns(3)
-                        
-                        # Column 1: Detected State
-                        with cols[0]:
+
+                        if status == "blocked":
+                            st.error(f"🛡️ **Prediction Blocked** — {analysis.validation_message}")
+                        else:
+                            cols = st.columns(3)
+
+                            with cols[0]:
+                                st.markdown(f"""
+                                <div class="metric-container" style="border-bottom: 4px solid {result['color']};">
+                                    <div class="metric-label">Detected State</div>
+                                    <div class="metric-value">{result['label']}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+
+                            with cols[1]:
+                                st.markdown(f"""
+                                <div class="metric-container">
+                                    <div class="metric-label">Confidence</div>
+                                    <div class="metric-value">{conf}%</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+
+                            with cols[2]:
+                                st.markdown(f"""
+                                <div class="metric-container">
+                                    <div class="metric-label">Priority</div>
+                                    <div class="metric-value">{result['priority']}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+
+                            if status == "flagged":
+                                st.warning(f"⚠️ **Safety Flag** — {analysis.validation_message}")
+
+                            elif status == "passed":
+                                st.success("✅ **Guardrails Passed** — Prediction meets safety criteria.")
+
                             st.markdown(f"""
-                            <div class="metric-container" style="border-bottom: 4px solid {result['color']};">
-                                <div class="metric-label">Detected State</div>
-                                <div class="metric-value">{result['label']}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                        # Column 2: Confidence
-                        with cols[1]:
-                            st.markdown(f"""
-                            <div class="metric-container">
-                                <div class="metric-label">Confidence</div>
-                                <div class="metric-value">{conf}%</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                        # Column 3: Priority
-                        with cols[2]:
-                            st.markdown(f"""
-                            <div class="metric-container">
-                                <div class="metric-label">Priority</div>
-                                <div class="metric-value">{result['priority']}</div>
+                            <div class="medical-card">
+                                <b>Clinical Interpretation:</b> Patient acoustic biomarkers suggest a 
+                                <span style="color:{result['color']};font-weight:bold;">{result['label']}</span> state. 
+                                Recommended Triage Action: <b>{result['priority']}</b>.
                             </div>
                             """, unsafe_allow_html=True)
 
-                        # Detailed Finding (Full Width)
-                        st.markdown(f"""
-                        <div class="medical-card">
-                            <b>Clinical Interpretation:</b> Patient acoustic biomarkers suggest a 
-                            <span style="color:{result['color']};font-weight:bold;">{result['label']}</span> state. 
-                            Recommended Triage Action: <b>{result['priority']}</b>.
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
+                        if audit.entries:
+                            with st.expander("📋 Safety Audit Trail"):
+                                for entry in audit.summary():
+                                    icon = {"block": "🚫", "flag": "⚠️", "correct": "🛠️", "pass": "✅"}.get(entry["action"], "ℹ️")
+                                    sev = {"error": "🔴", "warning": "🟡", "info": "🔵"}.get(entry["severity"], "⚪")
+                                    st.markdown(f"{sev} **{entry['rule']}** — {entry['action'].upper()} — {entry['message']}")
                     except Exception as e:
                         st.error(f"Analysis Error: {e}")
 

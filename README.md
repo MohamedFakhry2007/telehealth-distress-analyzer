@@ -2,7 +2,7 @@
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://telehealth-distress-analyzer-9rv6xsyezw4apdi8nwe4zs.streamlit.app)
 
-### AI-Powered Acoustic Triage for Telemedicine
+### Audio-based Clinical Triage with Guardrails & Evaluation Infrastructure
 **Try the Live Demo:** [Click Here to Open App](https://telehealth-distress-analyzer-9rv6xsyezw4apdi8nwe4zs.streamlit.app)
 
 **Author:** Dr. Mohamed Fakhry (Clinical AI Engineer & MD)
@@ -13,13 +13,15 @@ Click the image to watch the demo:
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Framework](https://img.shields.io/badge/Framework-SpeechBrain-red)
+![Guardrails](https://img.shields.io/badge/Guardrails-VLM--Guard-8A2BE2)
 ![Domain](https://img.shields.io/badge/Domain-Clinical%20AI-green)
+![Tests](https://img.shields.io/badge/Tests-22%20passing-brightgreen)
 
 ## 📋 Executive Summary
 
-In high-volume telehealth operations, identifying at-risk patients requires more than just transcript analysis. The **Telehealth Distress Analyzer** is a Clinical Decision Support System (CDSS) prototype engineered to detect vocal biomarkers of distress, agitation, or depressive states from patient audio.
+The **Telehealth Distress Analyzer** is a Clinical Decision Support System (CDSS) prototype that detects vocal biomarkers of distress, agitation, or depressive states from patient audio — with inference-time safety guardrails, an auditable verification layer, and a documented evaluation framework.
 
-Unlike standard sentiment analysis tools, this system focuses on **acoustic triage**, prioritizing patients based on the emotional urgency detected in their voice (e.g., Agitation vs. Calmness) before a clinician reviews the case.
+This project demonstrates acoustic ML engineering (not LLM/RAG): audio preprocessing, Wav2Vec2-based emotion classification, clinical triage mapping, and production-grade safety infrastructure via [**VLM-Guard**](https://github.com/MohamedFakhry2007/vlm-guard). Every prediction is validated by composable rules before reaching the clinician, and all decisions are recorded in an auditable trail.
 
 ## 🏥 Clinical Use Case
 
@@ -34,7 +36,8 @@ The system operates on a robust pipeline designed for Windows compatibility and 
 1. **Ingestion:** Fetches telehealth session recordings via `yt-dlp`.
 2. **Preprocessing:** Extracts 16 kHz mono audio waveforms using `ffmpeg` (with path handling for Windows).
 3. **Inference:** Utilizes **SpeechBrain's Wav2Vec2-IEMOCAP** model to map acoustic features to clinical states.
-4. **Triage Logic:** Maps raw model outputs (Anger, Sadness, etc.) to clinical priority levels (Urgent, Routine).
+4. **Guardrails:** [**VLM-Guard**](https://github.com/MohamedFakhry2007/vlm-guard) composable rule engine validates the prediction (confidence thresholds, known model biases, triage consistency) before it reaches the clinician.
+5. **Triage Logic:** Maps validated model outputs (Anger, Sadness, etc.) to clinical priority levels (Urgent, Routine).
 
 ## 🚀 Installation & Usage
 
@@ -84,6 +87,37 @@ During the engineering and testing phase, several observations were made regardi
    - Observation: Calm, quiet speech was sometimes flagged as "Depressive/Sad".
    - Root cause: Calmness and depression both exhibit low valence and arousal (slow tempo, low volume).
    - Clinical insight: Longitudinal analysis (comparing a patient against their baseline) reduces false positives.
+
+## 🛡️ Safety Guardrails (VLM-Guard)
+
+Inference-time safety is enforced via [**VLM-Guard**](https://github.com/MohamedFakhry2007/vlm-guard), a composable rule engine for auditable LLM verification. Three rules run on every prediction:
+
+| Rule | Trigger | Action | Clinical Rationale |
+|---|---|---|---|
+| **Confidence Threshold** | Confidence < 45% | **BLOCK** — prediction rejected | Low-confidence classifications are unreliable for clinical decisions |
+| **High-Arousal Ambiguity** | "Positive Affect" predicted at ≥ 90% confidence | **FLAG** — manual review recommended | IEMOCAP dataset bias: high-arousal states (anger/fear) share spectral profiles with excitement |
+| **Triage Consistency** | "Urgent" priority at < 60% confidence | **FLAG** — manual verification required | Urgent clinical actions demand higher certainty |
+
+Every rule firing is recorded in an **auditable trail** with before/after snapshots, available in the UI via the Safety Audit Trail expander.
+
+## 🧪 Test Suite
+
+22 tests covering guardrail rules, triage mapping, rule ordering, and end-to-end orchestrator behavior:
+
+```bash
+pytest tests/ -v
+```
+
+| Area | Tests | What's verified |
+|---|---|---|
+| **Clinical Map** | 5 | All 4 emotion mappings + unknown fallback |
+| **Adapter** | 2 | Analysis object creation, confidence level mapping |
+| **ConfidenceThresholdRule** | 2 | Blocks below floor, passes above |
+| **HighArousalAmbiguityRule** | 3 | Flags hap≥90%, skips low-conf hap, skips non-hap |
+| **TriageConsistencyRule** | 3 | Flags urgent<60%, passes ≥60%, skips non-urgent |
+| **Rule Ordering** | 1 | Blocked status prevents subsequent rule firing |
+| **Integration** | 5 | Full orchestrator path: pass, block, flag (arousal), flag (inconsistency), unknown emotion |
+| **Audit Trail** | 1 | Entries populated on action |
 
 ## 🛠️ Engineering Challenges & Fixes
 
